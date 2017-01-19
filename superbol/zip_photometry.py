@@ -2,10 +2,10 @@ import numpy as np
 
 def zip_photometry(photometry, dt=0.3):
     sorted_phot = sort_photometry(photometry)
-    binned_phot = bin_by_day(sorted_phot)
-    zipped_phot = combine_repeated_detections(binned_phot)
+#    binned_phot = bin_by_day(sorted_phot)
+#    zipped_phot = combine_repeated_detections(binned_phot)
 
-    return zipped_phot
+    return sorted_phot
 
 
 def sort_photometry(photometry):

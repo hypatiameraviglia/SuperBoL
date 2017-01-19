@@ -10,7 +10,7 @@ from .fit_blackbody import bb_flux_nounits
 from .luminosity import calc_Lbol
 from .zip_photometry import zip_photometry
 from specutils import extinction
-
+import ipdb
 
 class SN(object):
     """A supernova is the explosion that ends the life of a star
@@ -101,34 +101,43 @@ class SN(object):
             self.photometry = self.get_photometry()
 
         combined_phot = zip_photometry(self.photometry)
-
         converted_obs = self.convert_magnitudes_to_fluxes(combined_phot)
         dereddened_obs = self.deredden_fluxes(converted_obs)
         lbol_epochs = self.get_lbol_epochs(dereddened_obs, self.min_num_obs)
         distance_cm, distance_cm_err = self.get_distance_cm()
         
-        dtype = [('jd', '>f8'), ('phase', '>f8'), ('phase_err', '>f8'), ('lbol', '>f8'), ('lbol_err', '>f8')]
-        direct_lc = np.array([(0.0, 0.0, 0.0, 0.0, 0.0)], dtype=dtype) 
+        dtype = [('jd', '>f8'), ('phase', '>f8'), ('phase_err', '>f8'), ('lbol', '>f8'), ('lbol_err', '>f8'), ('wl_avg', '>f8'), ('T', '>f8'), ('R', '>f8')]
+        direct_lc = np.array([(0.0, 0.0, 0.0, 0.0, 0.0,0.0,0.0,0.0)], dtype=dtype) 
         for jd in lbol_epochs:
-            names = np.array([x['name'] for x in converted_obs 
+            names = np.array([x['name'] for x in dereddened_obs 
                               if x['jd'] == jd and x['name'] != b'z'])
-            wavelengths = np.array([x['wavelength'] for x in converted_obs
+            wavelengths = np.array([x['wavelength'] for x in dereddened_obs
                                     if x['jd'] == jd and x['name'] != b'z'])
-            fluxes = np.array([x['flux'] for x in converted_obs
+            fluxes = np.array([x['flux'] for x in dereddened_obs
                                if x['jd'] == jd and x['name'] != b'z'])
-            flux_errs = np.array([x['uncertainty'] for x in converted_obs
+            flux_errs = np.array([x['uncertainty'] for x in dereddened_obs
                                   if x['jd'] == jd and x['name'] != b'z'])
 
+            
             sort_indices = np.argsort(wavelengths)
+            names = names[sort_indices]
             wavelengths = wavelengths[sort_indices]
             fluxes = fluxes[sort_indices]
             flux_errs = flux_errs[sort_indices]
 
-            fqbol, fqbol_err = fqbol_trapezoidal(wavelengths, fluxes, flux_errs)
-            temperature, angular_radius, perr = bb_fit_parameters(wavelengths,
-                                                                   fluxes,
-                                                                   flux_errs)
+            # Only use fluxes redward of 5000A to calculate BB fit
+            bb_fit_indices = np.where(wavelengths > 0.0)
+            bb_wl = wavelengths[bb_fit_indices]
+            bb_fluxes = fluxes[bb_fit_indices]
+            bb_flux_errs = flux_errs[bb_fit_indices]
+    
 
+            fqbol, fqbol_err = fqbol_trapezoidal(wavelengths, fluxes, flux_errs)
+            temperature, angular_radius, perr = bb_fit_parameters(bb_wl,
+                    bb_fluxes,
+                    bb_flux_errs)
+
+    
             temperature_err = perr[0]
             angular_radius_err = perr[1]
 
@@ -146,12 +155,13 @@ class SN(object):
                 idx = np.nonzero(names == 'U')[0][0]
                 U_flux = fluxes[idx]
                 U_wl = wavelengths[idx]
-                if U_flux < bb_flux_nounits(U_wl,
+                bb_U_flux = bb_flux_nounits(U_wl,
                                             temperature, 
-                                            angular_radius):
+                                            angular_radius)
+                if U_flux < bb_U_flux:
                     uv_corr, uv_corr_err = uv_correction_linear(shortest_wl, 
                                                                 shortest_flux, 
-                                                                shortest_flux_err) 
+                                                                shortest_flux_err)
                 else:
                     uv_corr, uv_corr_err = uv_correction_blackbody(temperature,
                                                              temperature_err,
@@ -164,15 +174,17 @@ class SN(object):
                                                                angular_radius,
                                                                angular_radius_err,
                                                                shortest_wl)
-
+            
             fbol = fqbol + ir_corr + uv_corr
             fbol_err = np.sqrt(np.sum(x*x for x in [fqbol_err, ir_corr_err, uv_corr_err]))
             lum = fbol * 4.0 * np.pi * distance_cm**2.0
+#            lum_err = 4.0 * np.pi * distance_cm**2 * fbol_err
+
             lum_err = np.sqrt((4.0 * np.pi * distance_cm**2 * fbol_err)**2
                               +(8.0*np.pi * fbol * distance_cm * distance_cm_err)**2)
             phase = jd - self.parameter_table.cols.explosion_JD[0]
             phase_err = self.parameter_table.cols.explosion_JD_err[0]
-            direct_lc = np.append(direct_lc, np.array([(jd, phase, phase_err, lum, lum_err)], dtype=dtype), axis=0)
+            direct_lc = np.append(direct_lc, np.array([(jd, phase, phase_err, lum, lum_err, np.mean(wavelengths), temperature, angular_radius)], dtype=dtype), axis=0)
 
         direct_lc = np.delete(direct_lc, (0), axis=0)
         h5file.close()
@@ -202,13 +214,13 @@ class SN(object):
         
         for jd in lbol_epochs:
             wavelengths = np.array([x['wavelength'] for x in dereddened_obs
-                                    if x['jd'] == jd])
+                                    if x['jd'] == jd and x['name'] != b'z'])
             fluxes = np.array([x['flux'] for x in dereddened_obs
-                               if x['jd'] == jd])
+                               if x['jd'] == jd and x['name'] != b'z'])
             flux_errs = np.array([x['uncertainty'] for x in dereddened_obs
-                                  if x['jd'] == jd])
+                                  if x['jd'] == jd and x['name'] != b'z'])
             names = np.array([x['name'] for x in dereddened_obs
-                                  if x['jd'] == jd])
+                                  if x['jd'] == jd and x['name'] != b'z'])
 
             sort_indices = np.argsort(wavelengths)
             wavelengths = wavelengths[sort_indices]
@@ -219,13 +231,13 @@ class SN(object):
             fqbol, fqbol_err = fqbol_trapezoidal(wavelengths, fluxes, flux_errs)
 
             lqbol = fqbol * 4.0 * np.pi * distance_cm**2.0
+            #lqbol_err = 4.0 * np.pi * distance_cm**2 * fqbol_err
             lqbol_err = np.sqrt((4.0 * np.pi * distance_cm**2 * fqbol_err)**2
                               +(8.0*np.pi * fqbol * distance_cm * distance_cm_err)**2)
+
             phase = jd - self.parameter_table.cols.explosion_JD[0]
             phase_err = self.parameter_table.cols.explosion_JD_err[0]
-            # Quick and dirty fix for IR-only nights (don't want those in qbol calc)
-            if min(wavelengths) < 10000.0:
-                qbol_lc = np.append(qbol_lc, np.array([(jd, phase, phase_err, lqbol, lqbol_err)], dtype=dtype), axis=0)
+            qbol_lc = np.append(qbol_lc, np.array([(jd, phase, phase_err, lqbol, lqbol_err)], dtype=dtype), axis=0)
         
         qbol_lc = np.delete(qbol_lc, (0), axis=0)
         h5file.close()
@@ -420,10 +432,13 @@ class SN(object):
         
         for jd_unique in np.unique(converted_obs['jd']):
             num_obs = 0
+            num_obs_gt_5k = 0
             for obs in converted_obs:
                 if obs['jd'] == jd_unique:
                     num_obs += 1
-            if num_obs >= min_number_obs:
+                    if obs['wavelength'] > 5000.0:
+                        num_obs_gt_5k += 1
+            if num_obs >= min_number_obs and num_obs_gt_5k >= 2:
                 lbol_epochs = np.append(lbol_epochs, jd_unique)
         
         return lbol_epochs
