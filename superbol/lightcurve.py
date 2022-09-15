@@ -7,7 +7,7 @@ from superbol import photometry
 def calculate_lightcurve(fluxes, distance, flux_calculator):
     grouped_fluxes = sed.group_fluxes(fluxes, math.floor)
     SEDs = [sed.get_SED(flux_group)
-            for flux_group in grouped_fluxes if len(flux_group) > 2]
+            for flux_group in grouped_fluxes if len(flux_group) >= 2]
 
     sed.interpolate_missing_fluxes(SEDs)
 

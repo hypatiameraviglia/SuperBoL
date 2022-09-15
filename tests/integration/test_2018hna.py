@@ -31,7 +31,7 @@ class TestQuasiBolometricLightcurve(unittest.TestCase):
                     fluxes.append(observed_magnitude.convert_to_flux())
             except:
                 pass
-        
+        #print("List of times: ", observed_magnitude.time)
         distance = lum.Distance(1.282E7 * 3.086E18, 2.02E6 * 3.086E18)
         self.lc_18hna = lightcurve.calculate_lightcurve(fluxes, distance, lqbol.calculate_qbol_flux)
     #Put this stuff into a file
